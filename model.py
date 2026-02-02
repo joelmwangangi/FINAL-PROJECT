@@ -24,7 +24,7 @@ if not os.path.exists(MODEL_PATH):
     st.error("❌ Model not found. Please ensure your trained model is in the 'models/' folder.")
     st.stop()
 
-model = joblib.load(MODEL_PATH)
+model = joblib.load(models/mlp_model.joblib)
 st.success("✅ Model loaded successfully!")
 
 # Load scaler if available
