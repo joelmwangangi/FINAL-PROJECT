@@ -1,81 +1,88 @@
-# app.py — Loan Default Prediction Interface using Streamlit
+# =====================================
+# app.py — Smart Loan Default Predictor
+# =====================================
 
 import streamlit as st
 import pandas as pd
 import joblib
 import numpy as np
+import os
 
 # -----------------------------
-# Load trained model and objects
+# 1. Load trained model
 # -----------------------------
-rf_model = joblib.load("models/random_forest_model.joblib")   # or mlp_model.joblib
-scaler = joblib.load("models/scaler.joblib") if os.path.exists("models/scaler.joblib") else None
+MODEL_PATH = "models/random_forest_model.joblib"  # You can switch to mlp_model.joblib
+SCALER_PATH = "models/scaler.joblib"
 
-st.set_page_config(page_title="Loan Default Predictor", page_icon="💰")
+st.set_page_config(page_title="Loan Default Predictor", page_icon="💰", layout="centered")
 
-# -----------------------------
-# UI Title
-# -----------------------------
 st.title("💰 Loan Default Prediction System")
-st.write("Enter borrower details below to predict whether they are likely to default.")
+st.write("Predict the likelihood of a loan applicant defaulting based on financial and demographic data.")
+
+# Load model
+if not os.path.exists(MODEL_PATH):
+    st.error("❌ Model not found. Please ensure your trained model is in the 'models/' folder.")
+    st.stop()
+
+model = joblib.load(MODEL_PATH)
+st.success("✅ Model loaded successfully!")
+
+# Load scaler if available
+scaler = joblib.load(SCALER_PATH) if os.path.exists(SCALER_PATH) else None
 
 # -----------------------------
-# Define input fields
+# 2. Prepare dynamic input fields
 # -----------------------------
-col1, col2 = st.columns(2)
+features = model.feature_names_in_ if hasattr(model, "feature_names_in_") else []
 
-with col1:
-    age = st.number_input("Age", 18, 100, 30)
-    income = st.number_input("Annual Income (USD)", 0, 1000000, 50000)
-    loan_amount = st.number_input("Loan Amount", 0, 500000, 10000)
-    credit_score = st.number_input("Credit Score", 300, 850, 650)
+# If no feature names available, ask user for manual CSV
+if len(features) == 0:
+    st.warning("⚠️ Model does not contain feature names. Please ensure it was trained with scikit-learn ≥1.0.")
+    st.stop()
 
-with col2:
-    dependents = st.number_input("Number of Dependents", 0, 10, 0)
-    employment_years = st.number_input("Years at Current Job", 0, 40, 5)
-    education = st.selectbox("Education Level", ["High School", "Bachelor", "Master", "PhD"])
-    marital_status = st.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed"])
+# Create a form dynamically
+st.subheader("📋 Enter Borrower Information")
 
-# -----------------------------
-# Convert inputs into model-ready dataframe
-# -----------------------------
-input_data = pd.DataFrame({
-    "age": [age],
-    "income": [income],
-    "loan_amount": [loan_amount],
-    "credit_score": [credit_score],
-    "dependents": [dependents],
-    "employment_years": [employment_years],
-    "education": [education],
-    "marital_status": [marital_status]
-})
+user_input = {}
+for feat in features:
+    # Guess numeric vs categorical based on name
+    if any(k in feat.lower() for k in ["age","income","amount","score","year","balance","debt","payment","rate"]):
+        user_input[feat] = st.number_input(f"{feat.replace('_',' ').title()}", value=0.0)
+    elif any(k in feat.lower() for k in ["gender","education","marital","job","region","state","city"]):
+        user_input[feat] = st.selectbox(f"{feat.replace('_',' ').title()}", ["Select", "Option1", "Option2", "Option3"])
+    else:
+        # Default fallback
+        user_input[feat] = st.text_input(f"{feat.replace('_',' ').title()}", "")
 
-# Convert categorical features to dummy variables (same as training)
-input_data = pd.get_dummies(input_data, drop_first=True)
+# Convert to dataframe
+input_df = pd.DataFrame([user_input])
 
-# Align columns with model (handle missing dummies)
-model_features = rf_model.feature_names_in_
-for col in model_features:
-    if col not in input_data.columns:
-        input_data[col] = 0
-input_data = input_data[model_features]
+# Handle non-numeric dummies
+for col in features:
+    if col not in input_df.columns:
+        input_df[col] = 0
+input_df = input_df[features]
 
 # Scale if scaler available
 if scaler:
-    input_data = pd.DataFrame(scaler.transform(input_data), columns=model_features)
+    input_df = pd.DataFrame(scaler.transform(input_df), columns=features)
 
 # -----------------------------
-# Predict
+# 3. Prediction
 # -----------------------------
-if st.button("🔮 Predict Default Likelihood"):
-    pred_prob = rf_model.predict_proba(input_data)[0][1]
-    pred_label = "❌ Likely to Default" if pred_prob >= 0.5 else "✅ Unlikely to Default"
-    st.subheader(pred_label)
-    st.metric("Predicted Probability of Default", f"{pred_prob*100:.2f}%")
+if st.button("🔮 Predict Loan Default"):
+    prob = model.predict_proba(input_df)[0][1]
+    label = "❌ Likely to Default" if prob >= 0.5 else "✅ Unlikely to Default"
+    st.subheader(label)
+    st.metric("Predicted Probability of Default", f"{prob*100:.2f}%")
 
-    if pred_prob >= 0.7:
-        st.warning("⚠️ High risk! Consider stricter loan approval conditions.")
-    elif pred_prob >= 0.5:
-        st.info("🟠 Moderate risk. Review credit history carefully.")
+    if prob >= 0.7:
+        st.warning("⚠️ High risk — consider strict lending conditions.")
+    elif prob >= 0.5:
+        st.info("🟠 Moderate risk — manual review recommended.")
     else:
-        st.success("🟢 Low risk. Borrower looks financially stable.")
+        st.success("🟢 Low risk — borrower seems reliable.")
+
+st.markdown("---")
+st.caption("Powered by Scikit-learn • Streamlit • Loan Risk Intelligence System")
+
